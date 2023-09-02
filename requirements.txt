@@ -1,0 +1,5 @@
+sqlalchemy
+pandas
+webdriver_manager
+selenium
+pydantic-settings
