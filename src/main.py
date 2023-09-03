@@ -10,10 +10,12 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import ElementClickInterceptedException
 from config.base import env
 from db.database import Session, engine
+from api.geolocation import get_geolocation
 import db.schema as schema
 from sqlalchemy.dialects.postgresql import insert
 from datetime import date
 import re
+from tqdm import tqdm
 
 
 def extract_float(text: str) -> float:
@@ -56,7 +58,8 @@ def get_markers() -> List[WebElement]:
     )
     filtered_markers: List[WebElement] = list(filter(is_inside_safe_zone, markers))
     sorted_markers: List[WebElement] = sorted(
-        markers, key=lambda marker: (marker.location["y"], marker.location["x"])
+        filtered_markers,
+        key=lambda marker: (marker.location["y"], marker.location["x"]),
     )
     return sorted_markers
 
@@ -67,7 +70,7 @@ def scape(
     schema.Base.metadata.create_all(bind=engine)
     houses: list[schema.HouseListing] = []
     pricing: list[schema.PriceListing] = []
-    for marker in markers:
+    for marker in tqdm(markers):
         try:
             marker.click()
             wait = WebDriverWait(driver, 10)
@@ -85,18 +88,22 @@ def scape(
                 city, state, zip_code = split_address(
                     info.find_element(By.CLASS_NAME, "property-city-state-zip").text
                 )
+                address = info.find_element(By.CLASS_NAME, "property-address").text
                 if children != []:
+                    longitude, latitude = get_geolocation(
+                        address, city, state, zip_code
+                    )
                     houses.append(
                         schema.HouseListing(
-                            address=info.find_element(
-                                By.CLASS_NAME, "property-address"
-                            ).text,
+                            address=address,
                             city=city,
                             state=state,
                             zip=zip_code,
                             beds=extract_integer(children[0].text),
                             baths=extract_float(children[1].text),
                             sqft=extract_integer(children[2].text),
+                            longitude=longitude,
+                            latitude=latitude,
                         )
                     )
                     pricing.append(
@@ -132,15 +139,30 @@ def insert_data(
         }
         for house in houses
     ]
-    stmt = (
+    stmt_house = (
         insert(schema.HouseListing)
         .values(house_dicts)
         .on_conflict_do_nothing(index_elements=["address", "city", "state", "zip"])
     )
+    price_dicts = [
+        {
+            key: value
+            for key, value in price.__dict__.items()
+            if not key.startswith("_sa_")
+        }
+        for price in pricing
+    ]
+    stmt_pricing = (
+        insert(schema.HouseListing)
+        .values(price_dicts)
+        .on_conflict_do_nothing(
+            index_elements=["address", "city", "state", "zip", "date"]
+        )
+    )
 
     try:
-        session.execute(stmt)
-        session.add_all(pricing)
+        session.execute(stmt_house)
+        session.execute(stmt_pricing)
         session.commit()
     except Exception as e:
         print(e)
@@ -150,7 +172,7 @@ def insert_data(
 
 options = Options()
 options.add_experimental_option("detach", True)
-
+# options.add_argument("--headless")
 driver = webdriver.Chrome(
     service=Service(ChromeDriverManager().install()), options=options
 )
@@ -161,5 +183,4 @@ wait = WebDriverWait(driver, 10)
 markers = get_markers()
 houses, pricing = scape(markers)
 insert_data(houses, pricing)
-# driver.close()
 driver.quit()
