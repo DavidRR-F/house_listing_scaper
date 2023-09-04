@@ -2,11 +2,13 @@ from typing import List, Tuple
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.common.exceptions import ElementClickInterceptedException
 from config.base import env
 from db.database import Session, engine
@@ -34,7 +36,7 @@ def split_address(address):
     return city.strip(), state.strip(), zip_code.strip()
 
 
-def is_inside_safe_zone(element):
+def is_inside_safe_zone(element) -> bool:
     elem_x = element.location["x"]
     elem_y = element.location["y"]
     container: List[WebElement] = wait.until(
@@ -65,9 +67,8 @@ def get_markers() -> List[WebElement]:
 
 
 def scape(
-    markers: List[WebElement],
+    markers: List[WebElement], driver: WebDriver
 ) -> Tuple[list[schema.HouseListing], list[schema.PriceListing]]:
-    schema.Base.metadata.create_all(bind=engine)
     houses: list[schema.HouseListing] = []
     pricing: list[schema.PriceListing] = []
     for marker in tqdm(markers):
@@ -130,6 +131,7 @@ def scape(
 def insert_data(
     houses: list[schema.HouseListing], pricing: list[schema.PriceListing]
 ) -> None:
+    schema.Base.metadata.create_all(bind=engine)
     session = Session()
     house_dicts = [
         {
@@ -153,7 +155,7 @@ def insert_data(
         for price in pricing
     ]
     stmt_pricing = (
-        insert(schema.HouseListing)
+        insert(schema.PriceListing)
         .values(price_dicts)
         .on_conflict_do_nothing(
             index_elements=["address", "city", "state", "zip", "date"]
@@ -176,11 +178,11 @@ options.add_experimental_option("detach", True)
 driver = webdriver.Chrome(
     service=Service(ChromeDriverManager().install()), options=options
 )
-
-driver.get(env.SCAPE_URL)
-driver.maximize_window()
-wait = WebDriverWait(driver, 10)
-markers = get_markers()
-houses, pricing = scape(markers)
-insert_data(houses, pricing)
+for url in env.SCRAPE_URLS.split(","):
+    driver.get(url)
+    driver.maximize_window()
+    wait = WebDriverWait(driver, 10)
+    markers = get_markers()
+    houses, pricing = scape(markers, driver)
+    insert_data(houses, pricing)
 driver.quit()
