@@ -131,7 +131,6 @@ def scape(
 def insert_data(
     houses: list[schema.HouseListing], pricing: list[schema.PriceListing]
 ) -> None:
-    schema.Base.metadata.create_all(bind=engine)
     session = Session()
     house_dicts = [
         {
@@ -172,6 +171,7 @@ def insert_data(
         session.close()
 
 
+schema.Base.metadata.create_all(bind=engine)
 options = Options()
 options.add_experimental_option("detach", True)
 # options.add_argument("--headless")

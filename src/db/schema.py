@@ -6,6 +6,7 @@ from sqlalchemy import (
     String,
     Float,
     Boolean,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -41,6 +42,7 @@ class PriceListing(Base):
     house_listing = relationship("HouseListing", back_populates="price_listings")
 
     __table_args__ = (
+        UniqueConstraint("address", "city", "state", "zip", "date"),
         ForeignKeyConstraint(
             ["address", "city", "state", "zip"],
             [
