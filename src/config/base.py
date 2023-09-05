@@ -2,9 +2,11 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    SCRAPE_URLS: str
+    SCRAPE_URL: str
     DATABASE_URL: str
     GEOCODE_API: str
+    LOCATIONS: str
+    SIZES: str
 
     class Config:
         env_file = ".env"

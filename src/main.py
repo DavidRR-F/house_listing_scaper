@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -54,16 +54,19 @@ def is_inside_safe_zone(element) -> bool:
     )
 
 
-def get_markers() -> List[WebElement]:
-    markers: List[WebElement] = wait.until(
-        EC.presence_of_all_elements_located((By.CLASS_NAME, "custom-pin-image"))
-    )
-    filtered_markers: List[WebElement] = list(filter(is_inside_safe_zone, markers))
-    sorted_markers: List[WebElement] = sorted(
-        filtered_markers,
-        key=lambda marker: (marker.location["y"], marker.location["x"]),
-    )
-    return sorted_markers
+def get_markers() -> Union[List[WebElement], None]:
+    try:
+        markers: List[WebElement] = wait.until(
+            EC.presence_of_all_elements_located((By.CLASS_NAME, "custom-pin-image"))
+        )
+        filtered_markers: List[WebElement] = list(filter(is_inside_safe_zone, markers))
+        sorted_markers: List[WebElement] = sorted(
+            filtered_markers,
+            key=lambda marker: (marker.location["y"], marker.location["x"]),
+        )
+        return sorted_markers
+    except:
+        return None
 
 
 def scape(
@@ -123,7 +126,7 @@ def scape(
                     )
             except Exception as e:
                 continue
-        except ElementClickInterceptedException:
+        except Exception as e:
             continue
     return houses, pricing
 
@@ -178,11 +181,15 @@ options.add_experimental_option("detach", True)
 driver = webdriver.Chrome(
     service=Service(ChromeDriverManager().install()), options=options
 )
-for url in env.SCRAPE_URLS.split(","):
-    driver.get(url)
-    driver.maximize_window()
-    wait = WebDriverWait(driver, 10)
-    markers = get_markers()
-    houses, pricing = scape(markers, driver)
-    insert_data(houses, pricing)
+for location in env.LOCATIONS.split(","):
+    for size in env.SIZES.split(","):
+        county, coords = location.split("?")
+        url = f"{env.SCRAPE_URL}/{county}/{size}/?{coords}"
+        driver.get(url)
+        driver.maximize_window()
+        wait = WebDriverWait(driver, 10)
+        markers = get_markers()
+        if markers:
+            houses, pricing = scape(markers, driver)
+            insert_data(houses, pricing)
 driver.quit()
